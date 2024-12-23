@@ -9,8 +9,10 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * The Catalog keeps track of all available tables in the database and their
@@ -18,16 +20,38 @@ import java.util.concurrent.ConcurrentHashMap;
  * For now, this is a stub catalog that must be populated with tables by a
  * user program before it can be used -- eventually, this should be converted
  * to a catalog that reads a catalog table from disk.
- * 
+ *
  * @Threadsafe
  */
 public class Catalog {
+    List<DbFileItem> items ;
+    public static class DbFileItem implements Serializable {
 
+        private static final long serialVersionUID = 1L;
+
+        public final DbFile dbFile;
+
+
+        public final String  tableName;
+
+        private final String pkeyField;
+
+        public DbFileItem(DbFile file, String name, String pkeyField) {
+           this.dbFile=file;
+           this.tableName=name;
+           this.pkeyField=pkeyField;
+        }
+
+        public String toString() {
+            return dbFile + "(" + tableName + ")" + "(" + pkeyField + ")";
+        }
+    }
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
+        items= new ArrayList<DbFileItem>();
         // some code goes here
     }
 
@@ -41,7 +65,36 @@ public class Catalog {
      * @param pkeyField the name of the primary key field
      */
     public void addTable(DbFile file, String name, String pkeyField) {
-        // some code goes here
+       //先找表名是否有重复
+        int index = -1;
+        for (int i = 0; i < items.size(); i++) {
+            if(items.get(i).tableName.equals(name)){
+             index=i;
+             break;
+            }
+        }
+        //判断表id是否重复
+        int index2 = -1;
+        for (int i = 0; i < items.size(); i++) {
+            if(items.get(i).dbFile.getId() == file.getId()){
+                index2=i;
+                break;
+            }
+        }
+        if (index != -1) {
+            //使用最后一个要添加的表的名字
+            items.set(index, new DbFileItem(file, name, pkeyField));
+        }
+        if (index2 != -1) {
+            //使用最后一个要添加的表的名字
+            items.set(index2, new DbFileItem(file, name, pkeyField));
+        }
+        else {
+            //表名没有冲突
+            items.add(new DbFileItem(file, name, pkeyField));
+        }
+
+
     }
 
     public void addTable(DbFile file, String name) {
@@ -65,7 +118,12 @@ public class Catalog {
      */
     public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
-        return 0;
+        for (DbFileItem item : this.items) {
+        if (item.tableName.equals(name)) {
+            return item.dbFile.getId();
+        }
+        }
+        throw new NoSuchElementException();
     }
 
     /**
@@ -76,7 +134,12 @@ public class Catalog {
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        for (DbFileItem item : this.items) {
+            if (item.dbFile.getId() == tableid) {
+                return item.dbFile.getTupleDesc();
+            }
+        }
+        throw new NoSuchElementException();
     }
 
     /**
@@ -87,29 +150,45 @@ public class Catalog {
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        for (DbFileItem item : this.items) {
+            if (item.dbFile.getId() == tableid) {
+                return item.dbFile;
+            }
+        }
+       throw new NoSuchElementException();
     }
 
     public String getPrimaryKey(int tableid) {
-        // some code goes here
-        return null;
+        for (DbFileItem item : this.items) {
+            if (item.dbFile.getId() == tableid) {
+                return item.pkeyField;
+            }
+        }
+        throw new NoSuchElementException();
     }
 
     public Iterator<Integer> tableIdIterator() {
-        // some code goes here
-        return null;
+        List<Integer> tableIdList = items.stream().map(item -> item.dbFile.getId()).collect(Collectors.toList());
+        return tableIdList.iterator();
+
     }
 
     public String getTableName(int id) {
         // some code goes here
+        for (DbFileItem item : this.items) {
+            if (item.dbFile.getId() == id) {
+                return item.tableName;
+            }
+        }
         return null;
     }
-    
+
     /** Delete all tables from the catalog */
     public void clear() {
         // some code goes here
+        this.items.clear();
     }
-    
+
     /**
      * Reads the schema from a file and creates the appropriate tables in the database.
      * @param catalogFile
@@ -119,7 +198,7 @@ public class Catalog {
         String baseFolder=new File(new File(catalogFile).getAbsolutePath()).getParent();
         try {
             BufferedReader br = new BufferedReader(new FileReader(catalogFile));
-            
+
             while ((line = br.readLine()) != null) {
                 //assume line is of the format name (field type, field type, ...)
                 String name = line.substring(0, line.indexOf("(")).trim();
